@@ -16,63 +16,21 @@ Prerequisites
 -------------
 - Python 3.10+ recommended.
 - `pip` for dependency installation.
-- ~40 MB free disk for the dataset CSV that ships with the repo.
-
-
-Setup
------
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-
-Running the MCP server locally
-------------------------------
-By default the server uses FastMCP's `streamable-http` transport on `0.0.0.0:8000`.
-
-```bash
-source .venv/bin/activate
-python main.py
-```
-
-Environment overrides:
-- `MCP_TRANSPORT` — `streamable-http` (default) or `http`.
-- `HOST` — bind address (default `0.0.0.0`).
-- `PORT` — listen port (default `8000`).
-
-Example (explicit HTTP on localhost):
-```bash
-MCP_TRANSPORT=http HOST=127.0.0.1 PORT=8000 python main.py
-```
-
-After the server starts, point your MCP-compatible client at the URL it prints (e.g., `http://localhost:8000`).
-
 
 Remote connection
 -----------------
 If you host this server remotely, point clients to the deployed base URL:
 - Remote MCP endpoint: **https://specs-mcp.serve.scilifelab.se/mcp**
 
-
-Using from an MCP client
-------------------------
-Most MCP clients take a command plus transport config. Example JSON snippet for a local launch:
-```json
-{
-  "mcpServers": {
-    "specs-mcp": {
-      "command": ["python", "main.py"],
-      "transport": {
-        "type": "streamable-http",
-        "port": 8000
-      }
-    }
-  }
-}
+Running the MCP server locally with Docker
+------
+Build and run with Docker:
+```bash
+docker build -t specs-mcp .
+docker run --rm -p 8000:8000 specs-mcp
 ```
-Adjust the transport type/port to match your env vars or remote URL.
+
+After the server starts, point your MCP-compatible client at the URL it prints (e.g., `http://localhost:8000`).
 
 
 Available tools (high level)
@@ -91,11 +49,4 @@ Available tools (high level)
 All tools operate on the CSV loaded at startup; call `reload_dataset` after replacing `compound_aggregate_with_annotations.csv` to refresh the in-memory cache.
 
 
-Docker
-------
-Build and run with Docker:
-```bash
-docker build -t specs-mcp .
-docker run --rm -p 8000:8000 specs-mcp
-```
-Override `MCP_TRANSPORT`, `HOST`, or `PORT` via `-e` flags if needed.
+
