@@ -53,7 +53,7 @@ After the server starts, point your MCP-compatible client at the URL it prints (
 Remote connection
 -----------------
 If you host this server remotely, point clients to the deployed base URL:
-- Remote MCP endpoint: **<add-remote-url-here>**
+- Remote MCP endpoint: **https://specs-mcp.serve.scilifelab.se/mcp**
 
 
 Using from an MCP client
