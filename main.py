@@ -87,12 +87,29 @@ def query_compound_similarity(
     compound_name: str,
     top_n: int = 20,
 ) -> dict:
+    """
+    Global embedding similarity: top-N compounds most similar to the given compound
+    by PCA cosine similarity with **no filters or scoping**. Use this for all-compound
+    nearest neighbors; use compound_neighbors for scoped neighbors.
+
+    Args:
+        compound_name: Partial or full compound name (case-insensitive contains match).
+        top_n: Number of similar compounds to return, excluding the query compound itself.
+
+    Returns:
+        Dict with the matched query compound metadata, ranked list of similar compounds,
+        and a query_found flag (or an error message if not found).
+    """
     df = _get_df()
 
-    mask = df["compound_name"].fillna("").str.lower().str.contains(
-        compound_name.lower(), regex=False
-    )
-    matches = df[mask]
+    names = df["compound_name"].fillna("").str.lower().str.strip()
+    query_lower = compound_name.lower().strip()
+    exact_mask = names == query_lower
+    if exact_mask.any():
+        matches = df[exact_mask]
+    else:
+        contains_mask = names.str.contains(query_lower, regex=False)
+        matches = df[contains_mask]
 
     if len(matches) == 0:
         return asdict(
@@ -181,6 +198,15 @@ def query_compound_similarity(
 def get_compound_details(
     compound_name: str,
 ) -> dict:
+    """
+    Look up detailed metadata for a single compound.
+
+    Args:
+        compound_name: Partial or full compound name (case-insensitive contains match).
+
+    Returns:
+        A dict of compound metadata fields or an error message if not found.
+    """
     df = _get_df()
 
     mask = df["compound_name"].fillna("").str.lower().str.contains(
@@ -215,6 +241,16 @@ def list_available_compounds(
     search_term: Optional[str] = None,
     limit: int = 50,
 ) -> list[str]:
+    """
+    List compound names in the dataset with optional substring filtering.
+
+    Args:
+        search_term: Optional case-insensitive substring to filter names.
+        limit: Maximum number of names to return.
+
+    Returns:
+        Sorted list of compound names.
+    """
     df = _get_df()
 
     compounds = df["compound_name"].dropna().unique()
@@ -243,6 +279,19 @@ def query_moa_similarity(
     moa: str,
     top_n_other_moas: int = 20,
 ) -> dict:
+    """
+    MOA-centric analysis: summarize intra-class similarity and return the closest
+    compounds that sit **outside** the MOA (via centroid embedding similarity). Use
+    this when the intent is “find near neighbors not in this MOA.”
+
+    Args:
+        moa: Partial or full MOA string to match (case-insensitive contains).
+        top_n_other_moas: Number of nearest compounds outside the MOA to return.
+
+    Returns:
+        A dict with compounds in the MOA, intra-class similarity stats and ranking,
+        and the top similar compounds from other MOAs (or an error message).
+    """
     df = _get_df()
 
     mask = df["mechanism_of_action"].fillna("").str.lower().str.contains(
@@ -346,7 +395,8 @@ def query_moa_similarity(
             "note": "Only one compound in this MOA class, cannot compute intra-class similarity",
         }
 
-    other_compounds = df[~mask]
+    # Compare against compounds whose MOA is different from the matched_moa (not substring-based)
+    other_compounds = df[df["mechanism_of_action"] != matched_moa]
     if len(other_compounds) > 0 and len(moa_compounds) > 0:
         moa_centroid = moa_embeddings.mean(axis=0).reshape(1, -1)
         other_embeddings = other_compounds[PCA_COLUMNS].values
@@ -399,6 +449,17 @@ def list_available_moas(
     min_compounds: int = 1,
     limit: int = 50,
 ) -> list[dict]:
+    """
+    List MOAs present in the dataset with optional filters.
+
+    Args:
+        search_term: Optional case-insensitive substring filter.
+        min_compounds: Minimum compound count required to include an MOA.
+        limit: Maximum number of MOAs to return.
+
+    Returns:
+        List of dicts with MOA name and compound_count.
+    """
     df = _get_df()
 
     moa_counts = df["mechanism_of_action"].value_counts()
@@ -454,6 +515,13 @@ def get_moa_compound_list(
 
 @mcp.tool()
 def get_dataset_statistics() -> dict:
+    """
+    Return high-level dataset counts and dimension info for the loaded CSV.
+
+    Returns:
+        A dict with totals (compounds, MOAs, disease areas), clinical phase distribution,
+        and PCA dimension count.
+    """
     df = _get_df()
 
     clinical_phase_counts = {
@@ -477,6 +545,16 @@ def search_by_target_gene(
     gene: str,
     top_n: int = 50,
 ) -> list[dict]:
+    """
+    Find compounds whose target_genes include the given gene symbol.
+
+    Args:
+        gene: Gene symbol (case-insensitive; compared as uppercase).
+        top_n: Maximum number of compounds to return.
+
+    Returns:
+        List of compound records matching the gene.
+    """
     df = _get_df()
 
     mask = df["target_genes"].fillna("").str.contains(gene.upper(), regex=False)
@@ -508,25 +586,25 @@ def compare_two_compounds(
     compound_1: str,
     compound_2: str,
 ) -> dict:
+    """
+    Compare two compounds by name and report cosine similarity plus shared annotations.
+
+    Args:
+        compound_1: First compound name (case-insensitive contains match).
+        compound_2: Second compound name (case-insensitive contains match).
+
+    Returns:
+        A dict with metadata for both compounds, similarity score, shared genes,
+        and boolean flags for same MOA/disease (or an error if not found).
+    """
     df = _get_df()
 
-    mask1 = df["compound_name"].fillna("").str.lower().str.contains(
-        compound_1.lower(), regex=False
-    )
-    mask2 = df["compound_name"].fillna("").str.lower().str.contains(
-        compound_2.lower(), regex=False
-    )
-
-    matches1 = df[mask1]
-    matches2 = df[mask2]
-
-    if len(matches1) == 0:
+    row1 = _find_compound_row(df, compound_1)
+    row2 = _find_compound_row(df, compound_2)
+    if row1 is None:
         return {"error": f"Compound '{compound_1}' not found"}
-    if len(matches2) == 0:
+    if row2 is None:
         return {"error": f"Compound '{compound_2}' not found"}
-
-    row1 = matches1.iloc[0]
-    row2 = matches2.iloc[0]
 
     emb1 = row1[PCA_COLUMNS].values.reshape(1, -1)
     emb2 = row2[PCA_COLUMNS].values.reshape(1, -1)
@@ -591,6 +669,17 @@ def match_closest_compounds(
     top_n: int = 5,
     min_score: float = 0.6,
 ) -> dict:
+    """
+    Fuzzy-match a query string to compound names using SequenceMatcher similarity.
+
+    Args:
+        query: Free-text query to match against compound names.
+        top_n: Number of candidates to return.
+        min_score: Threshold to flag low-confidence matches.
+
+    Returns:
+        A dict with the best match, ranked candidates, and any low-confidence note.
+    """
     df = _get_df()
 
     compound_names = sorted(df["compound_name"].dropna().unique().tolist())
@@ -620,6 +709,17 @@ def match_closest_moa(
     top_n: int = 5,
     min_score: float = 0.6,
 ) -> dict:
+    """
+    Fuzzy-match a query string to MOA values using SequenceMatcher similarity.
+
+    Args:
+        query: Free-text query to match against MOA strings.
+        top_n: Number of candidates to return.
+        min_score: Threshold to flag low-confidence matches.
+
+    Returns:
+        A dict with the best match, ranked candidates, and any low-confidence note.
+    """
     df = _get_df()
 
     moa_names = sorted(df["mechanism_of_action"].dropna().unique().tolist())
@@ -647,6 +747,15 @@ def match_closest_moa(
 def list_compounds_by_moa(
     moa: str,
 ) -> dict:
+    """
+    List compounds that belong to a given MOA.
+
+    Args:
+        moa: Partial or full MOA string (case-insensitive contains match).
+
+    Returns:
+        Dict with the matched MOA and sorted list of compound names (or an error).
+    """
     df = _get_df()
 
     mask = df["mechanism_of_action"].fillna("").str.lower().str.contains(
@@ -679,10 +788,15 @@ def _split_genes(val: Optional[str]) -> list[str]:
 
 
 def _find_compound_row(df: pd.DataFrame, compound_name: str) -> Optional[pd.Series]:
-    mask = df["compound_name"].fillna("").str.lower().str.contains(
-        compound_name.lower(), regex=False
-    )
-    matches = df[mask]
+    """Find a compound row preferring exact (case-insensitive) name match, else substring."""
+    q = compound_name.strip().lower()
+    names = df["compound_name"].fillna("").str.lower().str.strip()
+    exact_mask = names == q
+    if exact_mask.any():
+        return df[exact_mask].iloc[0]
+
+    contains_mask = names.str.contains(q, regex=False)
+    matches = df[contains_mask]
     if len(matches) == 0:
         return None
     return matches.iloc[0]
@@ -760,6 +874,16 @@ def _top_compound_rows(rows: pd.DataFrame, limit: int) -> list[dict]:
 
 @mcp.tool()
 def gene_compounds(gene: str, limit: int = 50) -> dict:
+    """
+    List compounds that target a specific gene symbol.
+
+    Args:
+        gene: Gene symbol (compared in uppercase).
+        limit: Maximum number of compounds to return.
+
+    Returns:
+        Dict with the gene, total count, and compound details up to the limit.
+    """
     df = _get_df()
 
     query_gene = gene.upper().strip()
@@ -784,6 +908,18 @@ def gene_context(
     top_moas: int = 20,
     top_diseases: int = 20,
 ) -> dict:
+    """
+    Summarize the context for a gene: co-occurring genes, MOAs, and diseases.
+
+    Args:
+        gene: Gene symbol (compared in uppercase).
+        top_genes: Number of top co-genes to include.
+        top_moas: Number of top MOAs to include.
+        top_diseases: Number of top disease areas to include.
+
+    Returns:
+        Dict with counts and ranked co-gene/MOA/disease stats for the gene.
+    """
     df = _get_df()
 
     query_gene = gene.upper().strip()
@@ -859,6 +995,19 @@ def gene_context(
 def compound_targets(
     compound_name: str,
 ) -> dict:
+    """
+    Gene-overlap neighbors: retrieve target genes for a compound and find other compounds
+    that share those genes, prioritized by shared count then embedding similarity. Use
+    this when gene overlap is primary; use query_compound_similarity for global embedding
+    neighbors or compound_neighbors for scoped embedding neighbors.
+
+    Args:
+        compound_name: Partial or full compound name (case-insensitive contains match).
+
+    Returns:
+        Dict with the compound name, its target genes, and compounds sharing genes
+        (ranked by shared count then embedding similarity). Error returned if not found.
+    """
     df = _get_df()
 
     row = _find_compound_row(df, compound_name)
@@ -919,10 +1068,24 @@ def compound_targets(
 @mcp.tool()
 def compound_neighbors(
     compound_name: str,
-    scope: Optional[str] = None,
+    scope: str = "auto",
     filter_value: Optional[str] = None,
     top_n: int = 20,
 ) -> dict:
+    """
+    Scoped embedding neighbors: find the nearest compounds for a query **within a specific scope**.
+    This tool never returns global neighbors; use query_compound_similarity for unscoped search.
+
+    Args:
+        compound_name: Partial or full compound name (case-insensitive contains match).
+        scope: 'moa', 'disease', 'shared_genes', or 'auto' (default). 'auto' picks the first
+               available among moa -> disease -> shared_genes based on the query compound.
+        filter_value: Optional override value for MOA/disease scopes instead of the query compound's value.
+        top_n: Number of neighbors to return.
+
+    Returns:
+        Dict with the query compound, scope, and a ranked neighbor list (or an error).
+    """
     df = _get_df()
 
     row = _find_compound_row(df, compound_name)
@@ -933,9 +1096,24 @@ def compound_neighbors(
     query_emb = row[PCA_COLUMNS].values.reshape(1, -1)
 
     scope = scope.lower() if isinstance(scope, str) else None
-    valid_scopes = {None, "moa", "disease", "shared_genes"}
+    valid_scopes = {"moa", "disease", "shared_genes", "auto"}
     if scope not in valid_scopes:
         return {"error": f"Invalid scope '{scope}'. Use one of {valid_scopes}."}
+
+    if scope == "auto":
+        if pd.notna(row.get("mechanism_of_action")) and str(row.get("mechanism_of_action")).strip():
+            scope = "moa"
+        elif pd.notna(row.get("disease_area")) and str(row.get("disease_area")).strip():
+            scope = "disease"
+        elif _split_genes(row.get("target_genes")):
+            scope = "shared_genes"
+        else:
+            return {
+                "compound_name": row.get("compound_name"),
+                "scope": scope,
+                "neighbors": [],
+                "note": "No MOA, disease, or target gene information available to scope neighbors.",
+            }
 
     candidates = df.drop(index=query_idx)
 
@@ -966,7 +1144,6 @@ def compound_neighbors(
                 lambda x: len(query_genes & set(_split_genes(x))) > 0
             )
         ]
-    # scope None -> all compounds
 
     if len(candidates) == 0:
         return {
@@ -1023,6 +1200,17 @@ def compound_metadata(
     include_disease_neighbors: bool = False,
     neighbors_top_n: int = 20,
 ) -> dict:
+    """
+    Fetch core metadata for a compound and optionally include disease-matched neighbors.
+
+    Args:
+        compound_name: Partial or full compound name (case-insensitive contains match).
+        include_disease_neighbors: Whether to append neighbors sharing the disease_area.
+        neighbors_top_n: Number of neighbors to include when requested.
+
+    Returns:
+        Dict with compound metadata and optional disease neighbors (or an error).
+    """
     df = _get_df()
 
     row = _find_compound_row(df, compound_name)
@@ -1062,6 +1250,18 @@ def moa_summary(
     include_compounds: bool = False,
     limit: int = 100,
 ) -> dict:
+    """
+    Summarize a mechanism of action with gene/disease/phase distributions and stats.
+
+    Args:
+        moa: Partial or full MOA string (case-insensitive contains match).
+        include_compounds: Whether to include per-compound rows.
+        limit: Max number of compounds to include when requested.
+
+    Returns:
+        Dict with counts, viability/grit stats, top genes, disease/phase distribution,
+        and optional compound list (or an error).
+    """
     df = _get_df()
 
     mask = df["mechanism_of_action"].fillna("").str.lower().str.contains(
@@ -1097,6 +1297,16 @@ def moa_relations(
     moa: str,
     top_n: int = 20,
 ) -> dict:
+    """
+    Compute similarity between the given MOA centroid and other MOA centroids.
+
+    Args:
+        moa: Partial or full MOA string (case-insensitive contains match).
+        top_n: Number of nearest MOA neighbors to return.
+
+    Returns:
+        Dict with the matched MOA and a ranked list of similar MOAs (or an error).
+    """
     df = _get_df()
 
     mask = df["mechanism_of_action"].fillna("").str.lower().str.contains(
@@ -1137,6 +1347,18 @@ def disease_summary(
     include_compounds: bool = False,
     limit: int = 100,
 ) -> dict:
+    """
+    Summarize a disease area with gene/MOA/phase distributions and stats.
+
+    Args:
+        disease_area: Partial or full disease area string (case-insensitive contains match).
+        include_compounds: Whether to include per-compound rows.
+        limit: Max number of compounds to include when requested.
+
+    Returns:
+        Dict with counts, viability/grit stats, top genes, MOA/phase distribution,
+        and optional compound list (or an error).
+    """
     df = _get_df()
 
     mask = df["disease_area"].fillna("").str.lower().str.contains(
@@ -1173,6 +1395,18 @@ def disease_relations_by_phase(
     direction: str = "high",
     top_n: int = 20,
 ) -> dict:
+    """
+    Rank compounds within a clinical phase by cell viability and summarize disease mix.
+
+    Args:
+        phase: Partial or full clinical phase string (case-insensitive contains match).
+        direction: 'high' for highest viability or 'low' for lowest.
+        top_n: Number of top compounds to return.
+
+    Returns:
+        Dict with the matched phase, direction, top compounds, and disease distribution
+        (or an error).
+    """
     df = _get_df()
 
     direction = direction.lower()
@@ -1203,6 +1437,15 @@ def disease_relations_by_phase(
 def phase_summary_for_moa(
     moa: str,
 ) -> dict:
+    """
+    Show clinical phase distribution for compounds in a given MOA.
+
+    Args:
+        moa: Partial or full MOA string (case-insensitive contains match).
+
+    Returns:
+        Dict with the matched MOA and per-phase counts plus sample compounds (or an error).
+    """
     df = _get_df()
 
     mask = df["mechanism_of_action"].fillna("").str.lower().str.contains(
@@ -1237,6 +1480,15 @@ def phase_summary_for_moa(
 def moa_summary_for_phase(
     phase: str,
 ) -> dict:
+    """
+    Show MOA distribution for compounds within a clinical phase.
+
+    Args:
+        phase: Partial or full clinical phase string (case-insensitive contains match).
+
+    Returns:
+        Dict with the matched phase and per-MOA counts plus sample compounds (or an error).
+    """
     df = _get_df()
 
     mask = df["clinical_phase"].fillna("").str.lower().str.contains(
@@ -1271,6 +1523,15 @@ def moa_summary_for_phase(
 def disease_summary_for_moa(
     moa: str,
 ) -> dict:
+    """
+    Summarize disease areas represented within a given MOA.
+
+    Args:
+        moa: Partial or full MOA string (case-insensitive contains match).
+
+    Returns:
+        Dict with the matched MOA and per-disease counts plus sample compounds (or an error).
+    """
     df = _get_df()
 
     mask = df["mechanism_of_action"].fillna("").str.lower().str.contains(
@@ -1305,6 +1566,15 @@ def disease_summary_for_moa(
 def moa_summary_for_disease(
     disease_area: str,
 ) -> dict:
+    """
+    Summarize MOAs represented within a given disease area.
+
+    Args:
+        disease_area: Partial or full disease area string (case-insensitive contains match).
+
+    Returns:
+        Dict with the matched disease area and per-MOA counts plus sample compounds (or an error).
+    """
     df = _get_df()
 
     mask = df["disease_area"].fillna("").str.lower().str.contains(
@@ -1341,6 +1611,17 @@ def genes_for_group(
     value: str,
     limit: int = 50,
 ) -> dict:
+    """
+    List the most common target genes within an MOA or disease group.
+
+    Args:
+        group_type: 'moa' or 'disease' to choose the grouping column.
+        value: Partial or full string to match in the chosen group.
+        limit: Max number of genes to return.
+
+    Returns:
+        Dict with the group info and ranked gene counts (or an error).
+    """
     df = _get_df()
 
     group_type = group_type.lower()
@@ -1368,6 +1649,18 @@ def top_viability_in_group(
     direction: str = "high",
     limit: int = 20,
 ) -> dict:
+    """
+    Rank compounds by cell viability within a given MOA or clinical phase.
+
+    Args:
+        group_type: 'moa' or 'phase' to choose the grouping column.
+        value: Partial or full string to match in the chosen group.
+        direction: 'high' for highest viability or 'low' for lowest.
+        limit: Number of compounds to return.
+
+    Returns:
+        Dict with the group info, direction, and ranked compound rows (or an error).
+    """
     df = _get_df()
 
     group_type = group_type.lower()
