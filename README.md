@@ -33,20 +33,42 @@ docker run --rm -p 8000:8000 specs-mcp
 After the server starts, point your MCP-compatible client at the URL it prints (e.g., `http://localhost:8000`).
 
 
-Available tools (high level)
-----------------------------
-- `query_compound_similarity` — nearest neighbors for a compound by PCA cosine similarity.
-- `query_moa_similarity` — intra-MOA stats plus closest non-MOA compounds.
-- `list_available_compounds` / `list_available_moas` — discovery helpers with optional filters.
-- `get_compound_details`, `compare_two_compounds`, `compound_metadata` — metadata and pairwise comparison utilities.
-- `search_by_target_gene`, `gene_compounds`, `gene_context`, `compound_targets` — gene-centric queries and overlaps.
-- `compound_neighbors` — scoped neighbors by MOA, disease, shared genes, or all.
-- `moa_summary`, `moa_relations`, `disease_summary`, `disease_relations_by_phase`, `phase_summary_for_moa`, `moa_summary_for_phase`, `disease_summary_for_moa`, `moa_summary_for_disease` — rollups and cross-group relations.
-- `genes_for_group`, `top_viability_in_group` — gene and viability summaries for MOAs or phases.
-- `list_compounds_by_moa`, `match_closest_compounds`, `match_closest_moa` — fuzzy matching and quick lists.
-- `reload_dataset` — reloads the CSV into memory after you update it.
+Available tools
+---------------
+- `query_compound_similarity` — global embedding neighbors for a compound.
+- `compound_neighbors` — scoped embedding neighbors by MOA/disease/shared_genes (no global mode).
+- `compound_metadata` — core fields plus optional disease-matched neighbors.
+- `get_compound_details` — detailed metadata for one compound.
+- `list_available_compounds` — list compounds with optional substring filter.
+- `match_closest_compounds` — fuzzy-match free text to compound names.
+- `compare_two_compounds` — pairwise similarity and shared annotations.
+- `compound_targets` — gene-overlap neighbors for a compound.
+- `gene_compounds` — compounds targeting a specific gene.
+- `gene_context` — co-genes, MOAs, diseases for a gene.
+- `search_by_target_gene` — quick gene-to-compound lookup.
+- `query_moa_similarity` — intra-MOA stats and nearest compounds outside the MOA.
+- `list_available_moas` — list MOAs with optional filters.
+- `match_closest_moa` — fuzzy-match free text to MOA strings.
+- `list_compounds_by_moa` — compounds within a MOA.
+- `moa_summary` — MOA stats plus optional compound rows.
+- `moa_relations` — nearest MOA centroids to a given MOA.
+- `phase_summary_for_moa` — clinical phase distribution within an MOA.
+- `disease_summary_for_moa` — disease distribution within an MOA.
+- `moa_summary_for_phase` — MOA distribution within a clinical phase.
+- `top_viability_in_group` — viability ranking within an MOA or phase.
+- `disease_summary` — disease-level stats plus optional compounds.
+- `disease_relations_by_phase` — top compounds in a phase and disease mix.
+- `moa_summary_for_disease` — MOA distribution within a disease area.
+- `genes_for_group` — top genes within an MOA or disease group.
+- `compound_neighbors_shared_genes` — see `compound_neighbors` (scope shared_genes).
+- `compound_neighbors_disease` — see `compound_neighbors` (scope disease).
+- `compound_neighbors_moa` — see `compound_neighbors` (scope moa).
+- `top_viability_in_group_moa` — see `top_viability_in_group` (group_type moa).
+- `list_available_compounds_filtered` — see `list_available_compounds` with filter.
+- `list_available_moas_filtered` — see `list_available_moas` with filter.
+- `get_dataset_statistics` — dataset summary stats.
+- `reload_dataset` — reload the CSV into memory after updates.
 
 All tools operate on the CSV loaded at startup; call `reload_dataset` after replacing `compound_aggregate_with_annotations.csv` to refresh the in-memory cache.
-
 
 
